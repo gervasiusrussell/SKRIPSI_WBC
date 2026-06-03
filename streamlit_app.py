@@ -40,23 +40,24 @@ if page == "Deteksi Sel":
     uploaded_file = st.file_uploader("Pilih file citra (JPG, PNG, JPEG)", type=["jpg", "png", "jpeg"])
 
     if uploaded_file is not None:
-        # Membuka dan menampilkan gambar asli
         image = Image.open(uploaded_file)
         
-        col_img, col_btn = st.columns([3, 1])
-        with col_img:
-            st.image(image, caption="Citra Asli yang Diunggah", use_column_width=True)
-            
-        with col_btn:
-            st.write("Aksi:")
-            run_button = st.button("Jalankan Deteksi")
+        # 1. BUAT PLACEHOLDER (WADAH DINAMIS)
+        main_container = st.empty()
 
-        # Jika tombol deteksi ditekan
+        # 2. ISI WADAH DENGAN TAMPILAN AWAL (Gambar Asli & Tombol)
+        with main_container.container():
+            col_img, col_btn = st.columns([3, 1])
+            with col_img:
+                st.image(image, caption="Citra Asli yang Diunggah", use_column_width=True)
+            with col_btn:
+                st.write("Aksi:")
+                run_button = st.button("Jalankan Deteksi", key="btn_run")
+
+        # 3. JIKA TOMBOL DITEKAN, TIMPA ISI WADAH TERSEBUT
         if run_button:
             with st.spinner("Model sedang memproses citra..."):
                 # SIMULASI HASIL MODEL:
-                # Bagian ini nantinya akan diganti dengan pemanggilan model YOLO kamu
-                # Hasil di bawah ini hanya data palsu (dummy)
                 dummy_current_counts = {
                     'Neutrophil': 4,
                     'Lymphocyte': 2,
@@ -65,40 +66,42 @@ if page == "Deteksi Sel":
                     'Basophil': 0
                 }
 
-                # Simpan hasil ke dalam riwayat (history)
                 st.session_state['history'].append({
                     'filename': uploaded_file.name,
                     'counts': dummy_current_counts
                 })
 
-                # Tambahkan jumlah sel ke mode akumulasi (aggregate)
                 for cell, count in dummy_current_counts.items():
                     st.session_state['aggregate_counts'][cell] += count
 
-            st.success("Proses deteksi selesai!")
+            # KOSONGKAN WADAH LALU ISI DENGAN HASIL DETEKSI
+            main_container.empty() 
+            
+            with main_container.container():
+                st.success("Proses deteksi selesai!")
+                st.markdown("### Hasil Analisis")
+                
+                col_result1, col_result2 = st.columns(2)
 
-            # Menampilkan Hasil Visualisasi dan Tabel
-            st.markdown("### Hasil Analisis")
-            col_result1, col_result2 = st.columns(2)
+                with col_result1:
+                    st.subheader("Visualisasi Bounding Box")
+                    st.image(image, caption="Hasil Deteksi (Simulasi YOLO)", use_column_width=True)
 
-            with col_result1:
-                st.subheader("Visualisasi Bounding Box")
-                # Sementara menampilkan gambar asli, nanti diganti dengan output gambar dari model YOLO
-                st.image(image, caption="Hasil Deteksi (Simulasi)", use_column_width=True)
+                with col_result2:
+                    st.subheader("Laporan Hitung Jenis")
+                    
+                    if count_mode == "Hanya Gambar Saat Ini":
+                        st.info("Mode: Jumlah sel pada citra ini saja.")
+                        df_counts = pd.DataFrame(list(dummy_current_counts.items()), columns=['Jenis Sel', 'Jumlah'])
+                    else:
+                        st.info("Mode: Total akumulasi dari seluruh citra.")
+                        df_counts = pd.DataFrame(list(st.session_state['aggregate_counts'].items()), columns=['Jenis Sel', 'Jumlah Total'])
 
-            with col_result2:
-                st.subheader("Laporan Hitung Jenis (Differential Count)")
-
-                # Logika peralihan mode perhitungan
-                if count_mode == "Hanya Gambar Saat Ini":
-                    st.info("Mode: Menampilkan jumlah sel pada citra ini saja.")
-                    df_counts = pd.DataFrame(list(dummy_current_counts.items()), columns=['Jenis Sel', 'Jumlah'])
-                else:
-                    st.info("Mode: Menampilkan total akumulasi dari seluruh citra yang pernah diunggah.")
-                    df_counts = pd.DataFrame(list(st.session_state['aggregate_counts'].items()), columns=['Jenis Sel', 'Jumlah Total'])
-
-                # Tampilkan sebagai tabel interaktif
-                st.dataframe(df_counts, use_container_width=True)
+                    st.dataframe(df_counts, use_container_width=True)
+                
+                # Tombol untuk reset tampilan dan mendeteksi gambar lain
+                if st.button("Deteksi Ulang / Gambar Lain"):
+                    st.rerun()
 
 # 5. Halaman Riwayat Pemrosesan
 elif page == "Riwayat Pemrosesan":
