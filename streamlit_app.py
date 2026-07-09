@@ -4,6 +4,7 @@ from PIL import Image
 import cv2
 import numpy as np
 from ultralytics import YOLO
+import plotly.express as px
 
 # 1. Konfigurasi Halaman
 st.set_page_config(page_title="WBC Detection & Counting Dashboard", layout="wide")
@@ -15,7 +16,7 @@ def load_model():
 
 model = load_model()
 
-# 3. Inisialisasi Session State
+# 3. Inisialisasi Session State (Memori Penyimpanan Sesi)
 if 'history' not in st.session_state:
     st.session_state['history'] = []
     
@@ -75,10 +76,9 @@ if page == "Deteksi Sel":
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
         
-        # FUNGSI INTERNAL UNTUK INFERENCE (Dapat dipanggil berulang kali)
+        # FUNGSI INTERNAL UNTUK INFERENCE
         def run_inference():
             with st.spinner("Model sedang memproses gambar..."):
-                # Menjalankan model menggunakan nilai threshold terbaru dari slider
                 results = model.predict(image, conf=conf_threshold, iou=iou_threshold)
                 result = results[0]
 
@@ -86,7 +86,7 @@ if page == "Deteksi Sel":
                 img_bgr = result.plot() 
                 img_with_boxes = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-                # Menghitung distribusi kelas
+                # Menghitung sebaran kelas awal
                 current_counts = {k: 0 for k in st.session_state['aggregate_counts']}
                 crops = []
                 
@@ -98,7 +98,7 @@ if page == "Deteksi Sel":
                     if class_name in current_counts:
                         current_counts[class_name] += 1
 
-                    # Pengambilan sampel potongan gambar (crop)
+                    # Potongan gambar (crop) tiap sel
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     cropped_cell = image.crop((x1, y1, x2, y2))
                     crops.append({
@@ -107,7 +107,7 @@ if page == "Deteksi Sel":
                         "conf": conf_score
                     })
 
-                # Menyimpan ke wadah penampung sementara
+                # Menyimpan ke penampung sementara
                 st.session_state['temp_output'] = {
                     'filename': uploaded_file.name,
                     'img_visual': img_with_boxes,
@@ -115,7 +115,7 @@ if page == "Deteksi Sel":
                     'crops': crops
                 }
 
-        # TAMPILAN AWAL (Sebelum Deteksi Berjalan)
+        # TAMPILAN AWAL (Sebelum Deteksi)
         if st.session_state['temp_output'] is None or st.session_state['temp_output']['filename'] != uploaded_file.name:
             col_img, col_btn = st.columns([3, 1])
             with col_img:
@@ -126,23 +126,21 @@ if page == "Deteksi Sel":
                     run_inference()
                     st.rerun()
 
-        # TAMPILAN SETELAH DETEKSI (Proses Review, Edit, & Re-predict)
+        # TAMPILAN SETELAH DETEKSI (Review, Edit, & Re-predict)
         if st.session_state['temp_output'] is not None and st.session_state['temp_output']['filename'] == uploaded_file.name:
             temp_data = st.session_state['temp_output']
             
-            # Baris Header Hasil & Tombol Prediksi Ulang
             col_head1, col_head2 = st.columns([3, 1])
             with col_head1:
                 st.success("Deteksi objek selesai! Silakan tinjau hasil visualisasi dan tabel sebaran di bawah.")
             with col_head2:
-                # TOMBOL PREDIKSI ULANG jika parameter slider diubah
-                if st.button("🔄 Perbarui Prediksi (Slider)", use_container_width=True, help="Klik untuk memproses ulang gambar jika Anda baru saja mengubah nilai Confidence atau IoU di sidebar."):
+                if st.button("🔄 Perbarui Prediksi (Slider)", use_container_width=True, help="Klik untuk memproses ulang jika Anda baru saja mengubah nilai parameter di sidebar."):
                     run_inference()
                     st.rerun()
             
             # Form Koreksi Hasil Deteksi Manual
             st.markdown("### ✏️ Form Koreksi Hasil Deteksi")
-            st.info("Nilai di bawah ini merupakan hasil deteksi otomatis model. Anda dapat menyesuaikannya secara manual sebelum disimpan.")
+            st.info("Nilai di bawah ini merupakan hasil deteksi otomatis model. Anda dapat menyesuaikannya secara manual sebelum disimpan ke rekam medis.")
             
             edited_counts = {}
             col_edit = st.columns(5)
@@ -161,7 +159,6 @@ if page == "Deteksi Sel":
                 submit_button = st.button("💾 Simpan & Perbarui Total", type="primary", use_container_width=True)
             
             if submit_button:
-                # Memasukkan data hasil koreksi pengguna ke riwayat permanen
                 st.session_state['history'].append({
                     'filename': temp_data['filename'],
                     'counts': edited_counts
@@ -175,7 +172,7 @@ if page == "Deteksi Sel":
                 
             st.markdown("---")
 
-            # Bagian Tampilan Visualisasi
+            # Visualisasi Utama
             col_res1, col_res2 = st.columns([2, 1])
             with col_res1:
                 st.subheader("Visualisasi Lokalisasi")
@@ -199,7 +196,7 @@ if page == "Deteksi Sel":
                             st.image(crop_data["image"], use_container_width=True)
                             st.caption(f"**{crop_data['class']}**\nConf: {crop_data['conf']:.2f}")
 
-    # Dashboard Analisis Statistik & Ekspor Laporan
+    # 6. DASHBOARD ANALISIS MEDIS (DENGAN 2 GRAFIK BERDAMPINGAN)
     if len(st.session_state['history']) > 0:
         st.markdown("---")
         st.header("📊 Analisis Data Medis & Laporan Resmi")
@@ -212,27 +209,46 @@ if page == "Deteksi Sel":
             st.subheader("Analisis Statistik: Akumulasi Seluruh Sesi Pemeriksaan")
             df_analytics = pd.DataFrame(list(st.session_state['aggregate_counts'].items()), columns=['Jenis Sel', 'Jumlah'])
 
-        col_graph, col_table = st.columns([2, 1])
+        # Tata Letak Grafik Berdampingan
+        col_bar, col_pie = st.columns(2)
         
-        with col_graph:
-            st.markdown("#### **Grafik Distribusi Sel Jenis (Differential Count)**")
+        with col_bar:
+            st.markdown("#### **Grafik Sebaran Absolut (Bar Chart)**")
             st.bar_chart(data=df_analytics, x='Jenis Sel', y='Jumlah', use_container_width=True)
             
-        with col_table:
-            st.markdown("#### **Tabel Data Referensi**")
+        with col_pie:
+            st.markdown("#### **Grafik Proporsi Klinis (Pie Chart)**")
+            # Membuat Pie Chart interaktif menggunakan Plotly Express
+            if df_analytics['Jumlah'].sum() == 0:
+                st.warning("Jumlah total sel masih 0, Pie Chart tidak dapat dirender.")
+            else:
+                fig_pie = px.pie(
+                    df_analytics, 
+                    values='Jumlah', 
+                    names='Jenis Sel', 
+                    color_discrete_sequence=px.colors.qualitative.Pastel,
+                    hole=0.3 # Desain Donut Chart modern
+                )
+                fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10))
+                st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # Tabel Referensi & Tombol Unduh di Bagian Bawah Grafik
+        st.markdown("---")
+        col_tbl, col_dl = st.columns([2, 1])
+        with col_tbl:
             st.dataframe(df_analytics, use_container_width=True, hide_index=True)
-            
-            st.markdown("#### **Unduh Dokumen Hasil**")
+        with col_dl:
+            st.write("") # Spacer
             csv_data = df_analytics.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Unduh Laporan (.CSV)",
+                label="📥 Unduh Laporan Resmi (.CSV)",
                 data=csv_data,
                 file_name=f"Laporan_WBC_{count_mode.replace(' ', '_')}.csv",
                 mime='text/csv',
                 use_container_width=True
             )
 
-# 6. Halaman Riwayat Pemrosesan
+# 7. Halaman Riwayat Pemrosesan
 elif page == "Riwayat Pemrosesan":
     st.title("Riwayat Analisis Citra Resmi")
     st.write("Daftar sampel yang telah divalidasi dan dikonfirmasi masuk ke rekam medis.")
