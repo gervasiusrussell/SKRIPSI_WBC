@@ -196,16 +196,28 @@ if page == "Deteksi Sel":
                             st.image(crop_data["image"], use_container_width=True)
                             st.caption(f"**{crop_data['class']}**\nConf: {crop_data['conf']:.2f}")
 
-    # 6. DASHBOARD ANALISIS MEDIS (DENGAN 2 GRAFIK BERDAMPINGAN)
-    if len(st.session_state['history']) > 0:
+    # 6. DASHBOARD ANALISIS MEDIS (PERBAIKAN LOGIKA PEMICU)
+    # Pemicu diubah: grafik akan muncul jika ada prediksi aktif (temp) ATAU sudah ada riwayat (history)
+    has_temp = st.session_state['temp_output'] is not None
+    has_history = len(st.session_state['history']) > 0
+
+    if has_temp or has_history:
         st.markdown("---")
         st.header("📊 Analisis Data Medis & Laporan Resmi")
         
         if count_mode == "Hanya Gambar Saat Ini":
-            last_analysis = st.session_state['history'][-1]
-            st.subheader(f"Analisis Statistik Gambar Terakhir: {last_analysis['filename']}")
-            df_analytics = pd.DataFrame(list(last_analysis['counts'].items()), columns=['Jenis Sel', 'Jumlah'])
+            if has_temp:
+                # Jika baru selesai prediksi, langsung visualisasikan hasilnya secara real-time
+                data_sumber = st.session_state['temp_output']['counts']
+                st.subheader(f"Analisis Statistik Gambar Aktif: {st.session_state['temp_output']['filename']}")
+            else:
+                # Jika sudah di-save, ambil data terakhir dari history
+                data_sumber = st.session_state['history'][-1]['counts']
+                st.subheader(f"Analisis Statistik Gambar Terakhir: {st.session_state['history'][-1]['filename']}")
+                
+            df_analytics = pd.DataFrame(list(data_sumber.items()), columns=['Jenis Sel', 'Jumlah'])
         else:
+            # Mode Akumulasi Keseluruhan Sesi
             st.subheader("Analisis Statistik: Akumulasi Seluruh Sesi Pemeriksaan")
             df_analytics = pd.DataFrame(list(st.session_state['aggregate_counts'].items()), columns=['Jenis Sel', 'Jumlah'])
 
@@ -218,7 +230,6 @@ if page == "Deteksi Sel":
             
         with col_pie:
             st.markdown("#### **Grafik Proporsi Klinis (Pie Chart)**")
-            # Membuat Pie Chart interaktif menggunakan Plotly Express
             if df_analytics['Jumlah'].sum() == 0:
                 st.warning("Jumlah total sel masih 0, Pie Chart tidak dapat dirender.")
             else:
@@ -227,7 +238,7 @@ if page == "Deteksi Sel":
                     values='Jumlah', 
                     names='Jenis Sel', 
                     color_discrete_sequence=px.colors.qualitative.Pastel,
-                    hole=0.3 # Desain Donut Chart modern
+                    hole=0.3
                 )
                 fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10))
                 st.plotly_chart(fig_pie, use_container_width=True)
